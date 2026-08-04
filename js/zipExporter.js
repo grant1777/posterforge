@@ -111,6 +111,6 @@ function buildManifest(results, names) {
     ].join(' | '));
   });
 
-  lines.push('', 'Generated locally in the browser. https://github.com/yourname/PosterForge');
+  lines.push('', 'Generated locally in the browser. https://github.com/grant1777/posterforge');
   return lines.join('\n');
 }

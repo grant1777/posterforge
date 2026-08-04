@@ -112,7 +112,7 @@ source, or print at 5.3 × 3.5 in or smaller."*
 There is nothing to install. Clone the repository and open it:
 
 ```bash
-git clone https://github.com/yourname/PosterForge.git
+git clone https://github.com/grant1777/posterforge.git
 cd PosterForge
 ```
 
