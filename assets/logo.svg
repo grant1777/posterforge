@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" role="img" aria-label="PosterForge">
+  <defs>
+    <linearGradient id="pf-brand" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#8B7CFF"/>
+      <stop offset="55%" stop-color="#6D5EFC"/>
+      <stop offset="100%" stop-color="#4B3BE0"/>
+    </linearGradient>
+    <linearGradient id="pf-sheet" x1="0.2" y1="0" x2="0.8" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.98"/>
+      <stop offset="100%" stop-color="#DDD9FF" stop-opacity="0.86"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Rounded app tile -->
+  <rect width="48" height="48" rx="12" fill="url(#pf-brand)"/>
+
+  <!-- Back sheet, offset — the "batch" of posters -->
+  <rect x="16.5" y="9.5" width="18" height="24" rx="3" fill="#FFFFFF" opacity="0.28"/>
+
+  <!-- Front poster sheet -->
+  <rect x="12" y="13" width="19" height="25" rx="3" fill="url(#pf-sheet)"/>
+
+  <!-- Artwork inside the poster: horizon + sun, i.e. an image on a page -->
+  <path d="M15 30.5 L20.2 23.4 L24 28.2 L26.4 25.3 L28 27.5 V33.2 A1.8 1.8 0 0 1 26.2 35 H16.8 A1.8 1.8 0 0 1 15 33.2 Z" fill="#6D5EFC" opacity="0.85"/>
+  <circle cx="25.4" cy="19.6" r="2.5" fill="#FBBF24"/>
+</svg>

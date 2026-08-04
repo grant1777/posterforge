@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark light" />
+  <title>PosterForge — Turn any image into a print-ready poster</title>
+  <meta name="description" content="PosterForge converts your images into print-ready PDF posters at true 300 DPI. 100% local, no uploads, no tracking, no backend." />
+
+  <link rel="icon" type="image/png" href="assets/favicon.png" />
+  <link rel="apple-touch-icon" href="assets/favicon.png" />
+  <link rel="stylesheet" href="css/main.css" />
+
+  <!-- Third-party libraries (vendored in /libs so the app works offline and on GitHub Pages). -->
+  <script src="libs/pdf-lib.min.js" defer></script>
+  <script src="libs/pica.min.js" defer></script>
+  <script src="libs/jszip.min.js" defer></script>
+  <script src="libs/FileSaver.min.js" defer></script>
+
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to main content</a>
+
+  <header class="site-header">
+    <div class="shell site-header__inner">
+      <a class="brand" href="./" aria-label="PosterForge home">
+        <img src="assets/logo.svg" alt="" width="32" height="32" aria-hidden="true" />
+        <span class="brand__name">Poster<span class="brand__accent">Forge</span></span>
+      </a>
+
+      <div class="site-header__actions">
+        <span class="pill" title="Nothing ever leaves your device.">
+          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
+          </svg>
+          100% local
+        </span>
+
+        <button id="themeToggle" class="icon-btn" type="button" aria-label="Switch to light theme" aria-pressed="false">
+          <svg class="icon-moon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+          </svg>
+          <svg class="icon-sun" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="4" />
+            <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+          </svg>
+        </button>
+
+        <a class="ghost-btn" href="https://github.com/yourname/PosterForge" target="_blank" rel="noopener noreferrer">
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="currentColor">
+            <path d="M12 .5a12 12 0 0 0-3.79 23.4c.6.11.82-.26.82-.58v-2.2c-3.34.73-4.04-1.42-4.04-1.42-.55-1.4-1.34-1.77-1.34-1.77-1.09-.75.08-.73.08-.73 1.2.08 1.84 1.24 1.84 1.24 1.07 1.84 2.8 1.31 3.49 1 .1-.78.42-1.31.76-1.61-2.67-.3-5.47-1.34-5.47-5.96 0-1.32.47-2.39 1.24-3.23-.13-.3-.54-1.53.12-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.29-1.55 3.3-1.23 3.3-1.23.66 1.65.25 2.88.12 3.18.77.84 1.23 1.91 1.23 3.23 0 4.63-2.8 5.65-5.48 5.95.43.37.82 1.1.82 2.22v3.29c0 .32.21.7.82.58A12 12 0 0 0 12 .5Z" />
+          </svg>
+          <span>GitHub</span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" class="shell">
+    <!-- ───────────────────────────── Hero ───────────────────────────── -->
+    <section class="hero">
+      <h1 class="hero__title">Turn any image into a print-ready poster.</h1>
+      <p class="hero__sub">
+        True 300&nbsp;DPI PDFs with correct physical dimensions, Lanczos resampling and honest
+        print-quality analysis. Everything runs in your browser — your images are never uploaded.
+      </p>
+    </section>
+
+    <!-- ─────────────────────────── Dropzone ─────────────────────────── -->
+    <section aria-labelledby="dropzone-heading">
+      <h2 id="dropzone-heading" class="visually-hidden">Add images</h2>
+
+      <div id="dropzone" class="dropzone" tabindex="0" role="button"
+           aria-describedby="dropzoneHint"
+           aria-label="Drop images here, or press Enter to choose files">
+        <div class="dropzone__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <path d="M17 8l-5-5-5 5" /><path d="M12 3v12" />
+          </svg>
+        </div>
+        <p class="dropzone__title">Drop images here</p>
+        <p class="dropzone__or">or</p>
+        <button id="chooseFilesBtn" class="btn btn--primary" type="button">Choose Files</button>
+        <p id="dropzoneHint" class="dropzone__hint">
+          PNG · JPEG · WEBP · BMP · GIF (first frame) · AVIF · TIFF (browser permitting)
+        </p>
+        <input id="fileInput" class="visually-hidden" type="file" multiple
+               accept="image/*,.tif,.tiff" aria-label="Choose image files" />
+      </div>
+    </section>
+
+    <!-- ─────────────────────────── Settings ─────────────────────────── -->
+    <section class="panel" aria-labelledby="settings-heading">
+      <div class="panel__head">
+        <h2 id="settings-heading" class="panel__title">Settings</h2>
+        <button id="resetSettingsBtn" class="ghost-btn ghost-btn--sm" type="button">Reset to defaults</button>
+      </div>
+
+      <div class="settings-grid">
+        <div class="field">
+          <label class="field__label" for="paperSize">Paper Size</label>
+          <div class="select-wrap">
+            <select id="paperSize" class="control"><!-- populated by ui.js --></select>
+          </div>
+          <p class="field__hint" id="paperSizeHint">&nbsp;</p>
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="orientation">Orientation</label>
+          <div class="select-wrap">
+            <select id="orientation" class="control">
+              <option value="auto" selected>Auto (match image)</option>
+              <option value="portrait">Portrait</option>
+              <option value="landscape">Landscape</option>
+            </select>
+          </div>
+          <p class="field__hint">Auto rotates the page to match each image.</p>
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="dpi">DPI</label>
+          <div class="select-wrap">
+            <select id="dpi" class="control">
+              <option value="150">150 — draft</option>
+              <option value="200">200 — large format</option>
+              <option value="300" selected>300 — print standard</option>
+              <option value="600">600 — fine art</option>
+              <option value="custom">Custom…</option>
+            </select>
+          </div>
+          <input id="dpiCustom" class="control control--number is-hidden" type="number"
+                 min="72" max="1200" step="1" value="300" aria-label="Custom DPI" />
+          <p class="field__hint">Pixels rendered per printed inch.</p>
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="background">Background</label>
+          <div class="select-wrap">
+            <select id="background" class="control">
+              <option value="white" selected>White</option>
+              <option value="black">Black</option>
+              <option value="transparent">Transparent</option>
+              <option value="custom">Custom color…</option>
+            </select>
+          </div>
+          <div id="bgCustomRow" class="color-row is-hidden">
+            <input id="backgroundColor" type="color" value="#f2f2f2" aria-label="Custom background color" />
+            <span id="backgroundColorValue" class="mono">#F2F2F2</span>
+          </div>
+          <p class="field__hint">Transparent exports PNG; it may print as white.</p>
+        </div>
+
+        <div class="field field--wide">
+          <span class="field__label" id="fitModeLabel">Fit Mode</span>
+          <div class="radio-cards" role="radiogroup" aria-labelledby="fitModeLabel">
+            <label class="radio-card">
+              <input type="radio" name="fitMode" value="fit" checked />
+              <span class="radio-card__body">
+                <span class="radio-card__title">Fit</span>
+                <span class="radio-card__desc">Scales the image as large as possible while keeping all of it visible. Nothing is cropped; unused paper shows the background.</span>
+              </span>
+            </label>
+            <label class="radio-card">
+              <input type="radio" name="fitMode" value="fill" />
+              <span class="radio-card__body">
+                <span class="radio-card__title">Fill</span>
+                <span class="radio-card__desc">Covers the whole page edge to edge. Aspect ratio is preserved, so the overhanging edges are cropped.</span>
+              </span>
+            </label>
+            <label class="radio-card">
+              <input type="radio" name="fitMode" value="border" />
+              <span class="radio-card__body">
+                <span class="radio-card__title">Border</span>
+                <span class="radio-card__desc">Like Fit, but inset by an even margin — a gallery mat that leaves room for framing.</span>
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <div class="field" id="marginField" hidden>
+          <label class="field__label" for="margin">Border Width (inches)</label>
+          <div class="range-row">
+            <input id="margin" class="control control--range" type="range"
+                   min="0" max="3" step="0.05" value="0.5" aria-describedby="marginValue" />
+            <output id="marginValue" class="mono" for="margin">0.50″</output>
+          </div>
+          <p class="field__hint">Applied to all four edges.</p>
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="jpegQuality">JPEG Quality</label>
+          <div class="range-row">
+            <input id="jpegQuality" class="control control--range" type="range"
+                   min="0.5" max="1" step="0.01" value="0.92" aria-describedby="jpegQualityValue" />
+            <output id="jpegQualityValue" class="mono" for="jpegQuality">92%</output>
+          </div>
+          <p class="field__hint">Transparent backgrounds always export lossless PNG.</p>
+        </div>
+
+        <div class="field field--wide">
+          <div class="switches">
+            <label class="switch">
+              <input id="keepAspect" type="checkbox" checked />
+              <span class="switch__track" aria-hidden="true"><span class="switch__thumb"></span></span>
+              <span class="switch__text">
+                <span class="switch__title">Keep Aspect Ratio</span>
+                <span class="switch__desc">Never distort. Turning this off stretches the image to the page.</span>
+              </span>
+            </label>
+
+            <label class="switch">
+              <input id="maximize" type="checkbox" checked />
+              <span class="switch__track" aria-hidden="true"><span class="switch__thumb"></span></span>
+              <span class="switch__text">
+                <span class="switch__title">Maximize Image</span>
+                <span class="switch__desc">Upscale small images to fill the page. Off prints at native size, never larger.</span>
+              </span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel__foot">
+        <div class="panel__summary" id="settingsSummary" aria-live="polite"></div>
+        <div class="panel__cta">
+          <button id="clearAllBtn" class="btn btn--ghost" type="button" disabled>Clear All</button>
+          <button id="generateBtn" class="btn btn--primary btn--lg" type="button" disabled>Generate Posters</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─────────────────────────── Progress ─────────────────────────── -->
+    <section id="progressPanel" class="panel panel--progress" aria-labelledby="progress-heading" hidden>
+      <div class="panel__head">
+        <h2 id="progress-heading" class="panel__title">Generating</h2>
+        <button id="cancelBtn" class="ghost-btn ghost-btn--sm" type="button">Cancel</button>
+      </div>
+      <div class="progress" role="progressbar" aria-labelledby="progress-heading"
+           aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progressBar">
+        <div class="progress__fill" id="progressFill"></div>
+      </div>
+      <p class="progress__status" id="progressStatus" aria-live="polite">Preparing…</p>
+    </section>
+
+    <!-- ─────────────────────────── Results ──────────────────────────── -->
+    <section id="resultsPanel" class="panel" aria-labelledby="results-heading" hidden>
+      <div class="panel__head">
+        <h2 id="results-heading" class="panel__title">Posters <span class="count-badge" id="resultsCount">0</span></h2>
+        <div class="panel__cta">
+          <button id="downloadZipBtn" class="btn btn--primary" type="button">Download All (ZIP)</button>
+        </div>
+      </div>
+      <ul class="results" id="resultsList"></ul>
+    </section>
+
+    <!-- ─────────────────────────── Preview ──────────────────────────── -->
+    <section id="previewPanel" class="panel" aria-labelledby="preview-heading" hidden>
+      <div class="panel__head">
+        <h2 id="preview-heading" class="panel__title">Preview <span class="count-badge" id="previewCount">0</span></h2>
+        <p class="panel__meta" id="previewMeta"></p>
+      </div>
+      <ul class="grid" id="previewGrid"></ul>
+    </section>
+
+    <section id="emptyState" class="empty">
+      <p>No images yet. Drop a few in and PosterForge will tell you exactly how well they will print.</p>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="shell site-footer__inner">
+      <p>PosterForge — MIT licensed. Built with pdf-lib, Pica, JSZip and FileSaver.js.</p>
+      <p>No uploads. No tracking. No analytics.</p>
+    </div>
+  </footer>
+
+  <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+
+  <!-- Card template for the preview grid; cloned by ui.js. -->
+  <template id="previewCardTemplate">
+    <li class="card">
+      <div class="card__thumb">
+        <img alt="" loading="lazy" />
+        <button class="card__remove" type="button" aria-label="Remove image">
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round">
+            <path d="M18 6 6 18M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <div class="card__body">
+        <p class="card__name" data-name></p>
+        <dl class="card__stats">
+          <div><dt>Resolution</dt><dd data-resolution></dd></div>
+          <div><dt>Aspect</dt><dd data-aspect></dd></div>
+          <div><dt>Print size</dt><dd data-printsize></dd></div>
+          <div><dt>Effective DPI</dt><dd data-effdpi></dd></div>
+          <div><dt>Scale factor</dt><dd data-scale></dd></div>
+          <div><dt>Est. size</dt><dd data-filesize></dd></div>
+        </dl>
+        <div class="rating" data-rating>
+          <span class="rating__stars" data-stars aria-hidden="true"></span>
+          <span class="rating__label" data-rating-label></span>
+        </div>
+        <p class="card__advice" data-advice></p>
+      </div>
+    </li>
+  </template>
+</body>
+</html>
