@@ -540,6 +540,13 @@ main.shell {
   line-height: 1.45;
 }
 
+/* Inline word joining a control to the one above it ("…below 150 DPI"). */
+.field__inline-label {
+  flex: none;
+  font-size: 0.8125rem;
+  color: var(--text-3);
+}
+
 .control {
   width: 100%;
   height: 40px;
@@ -595,6 +602,11 @@ main.shell {
   display: flex;
   align-items: center;
   gap: var(--s-3);
+}
+
+/* A select sharing a row with a label should take the leftover width. */
+.range-row .select-wrap {
+  flex: 1;
 }
 
 .control--range {
@@ -947,6 +959,19 @@ main.shell {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Badge on cards whose image will share a page with others. */
+.card__tag {
+  align-self: flex-start;
+  padding: 2px var(--s-2);
+  border: 1px solid var(--brand);
+  border-radius: var(--r-sm);
+  background: var(--brand-soft);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--brand);
 }
 
 .card__stats {

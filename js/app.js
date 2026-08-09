@@ -11,8 +11,11 @@
 
 import { initUI, defaultSettings } from './ui.js';
 import { getPaperSize } from './paperSizes.js';
-import { isProbablyImage, decodeImageFile, releaseResources } from './imageProcessor.js';
+import {
+  isProbablyImage, decodeImageFile, releaseResources, getResampleFallbackReason,
+} from './imageProcessor.js';
 import { generatePosters } from './pdfGenerator.js';
+import { planBatch } from './sheetPlanner.js';
 import { downloadBlob, downloadAllAsZip } from './zipExporter.js';
 
 /**
@@ -27,6 +30,8 @@ import { downloadBlob, downloadAllAsZip } from './zipExporter.js';
  * @property {number}  jpegQuality  0.5–1.
  * @property {boolean} keepAspect
  * @property {boolean} maximize
+ * @property {'off'|'auto'} nUp        Group low-resolution images onto shared sheets.
+ * @property {number}  nUpMinDpi       Effective DPI below which grouping kicks in.
  */
 
 /** Hard ceiling on queue length, to keep the preview grid usable. */
@@ -45,6 +50,8 @@ const state = {
   abortController: null,
   busy: false,
   nextId: 0,
+  /** True once the "resampling fell back" notice has been shown. */
+  fallbackReported: false,
 };
 
 /** @type {ReturnType<typeof initUI>} */
@@ -69,6 +76,8 @@ function currentSettings() {
     jpegQuality: raw.jpegQuality,
     keepAspect: raw.keepAspect,
     maximize: raw.maximize,
+    nUp: raw.nUp,
+    nUpMinDpi: raw.nUpMinDpi,
   };
 }
 
@@ -111,7 +120,10 @@ function describeSettings(settings) {
   const count = state.images.length;
   const noun = count === 1 ? 'poster' : 'posters';
   const target = count ? `${count} ${noun}` : 'Nothing queued';
-  return `${target} · ${paper.label.split('—')[0].trim()} · ${orientation} · ${dpi} DPI · ${modeText}`;
+  const grouping = settings.nUp === 'auto'
+    ? ` · grouping anything under ${settings.nUpMinDpi} DPI`
+    : '';
+  return `${target} · ${paper.label.split('—')[0].trim()} · ${orientation} · ${dpi} DPI · ${modeText}${grouping}`;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -238,12 +250,24 @@ async function generate() {
   ui.setBusy(true);
   ui.showProgress();
 
-  const total = state.images.length;
+  // The plan decides what becomes its own poster and what gets grouped onto a
+  // shared sheet, so the progress total counts *pages*, not queued images.
+  const plan = planBatch(state.images, settings);
+  const total = plan.jobs.length;
   const failures = [];
   const startedAt = performance.now();
 
+  if (plan.sheets.length) {
+    const count = plan.grouped.size;
+    ui.toast(
+      `${count} low-resolution image${count === 1 ? '' : 's'} grouped onto `
+      + `${plan.sheets.length} shared sheet${plan.sheets.length === 1 ? '' : 's'}.`,
+      'info',
+    );
+  }
+
   try {
-    const batch = generatePosters(state.images, settings, {
+    const batch = generatePosters(plan.jobs, settings, {
       signal: state.abortController.signal,
       onProgress: ({ index, stage, name }) => {
         // The bar tracks completed posters; the label tracks the live stage.
@@ -284,6 +308,13 @@ async function generate() {
 
     if (failures.length) {
       ui.toast(`${failures.length} poster${failures.length === 1 ? '' : 's'} failed. ${failures[0]}`, 'error');
+    }
+
+    // Mentioned once per session, not once per poster.
+    const fallbackReason = getResampleFallbackReason();
+    if (fallbackReason && !state.fallbackReported) {
+      state.fallbackReported = true;
+      ui.toast(fallbackReason, 'warn');
     }
   } catch (error) {
     ui.updateProgress(100, 'Failed.');

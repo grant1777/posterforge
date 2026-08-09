@@ -13,6 +13,7 @@ import { getGroupedPaperSizes, getPaperSize, formatInches, DEFAULT_PAPER_ID } fr
 import {
   analyzeImage, estimateFileSize, formatStars, formatBytes, formatAspectRatio,
 } from './qualityAnalyzer.js';
+import { planBatch } from './sheetPlanner.js';
 
 /** localStorage keys. */
 const STORAGE = Object.freeze({ settings: 'posterforge.settings.v1', theme: 'posterforge.theme' });
@@ -37,6 +38,8 @@ export function defaultSettings() {
     jpegQuality: 0.92,
     keepAspect: true,
     maximize: true,
+    nUp: 'auto',
+    nUpMinDpi: 150,
   };
 }
 
@@ -73,6 +76,9 @@ function queryElements() {
     jpegQualityValue: byId('jpegQualityValue'),
     keepAspect: byId('keepAspect'),
     maximize: byId('maximize'),
+    nUp: byId('nUp'),
+    nUpMinDpi: byId('nUpMinDpi'),
+    nUpThresholdRow: byId('nUpThresholdRow'),
     resetSettingsBtn: byId('resetSettingsBtn'),
     settingsSummary: byId('settingsSummary'),
 
@@ -198,6 +204,8 @@ function readSettings(elements) {
     jpegQuality: Number(elements.jpegQuality.value),
     keepAspect: elements.keepAspect.checked,
     maximize: elements.maximize.checked,
+    nUp: elements.nUp.value,
+    nUpMinDpi: Number(elements.nUpMinDpi.value),
   };
 }
 
@@ -229,6 +237,8 @@ function applySettings(elements, settings) {
   elements.jpegQuality.value = merged.jpegQuality;
   elements.keepAspect.checked = merged.keepAspect;
   elements.maximize.checked = merged.maximize;
+  elements.nUp.value = merged.nUp;
+  elements.nUpMinDpi.value = String(merged.nUpMinDpi);
 
   const radio = document.querySelector(`input[name="fitMode"][value="${merged.fitMode}"]`);
   if (radio) radio.checked = true;
@@ -247,6 +257,7 @@ function syncConditionalFields(elements) {
   elements.dpiCustom.classList.toggle('is-hidden', settings.dpiChoice !== 'custom');
   elements.bgCustomRow.classList.toggle('is-hidden', settings.background !== 'custom');
   elements.marginField.hidden = settings.fitMode !== 'border';
+  elements.nUpThresholdRow.classList.toggle('is-hidden', settings.nUp !== 'auto');
 
   elements.marginValue.value = `${settings.margin.toFixed(2)}″`;
   elements.jpegQualityValue.value = `${Math.round(settings.jpegQuality * 100)}%`;
@@ -351,6 +362,7 @@ function bindEvents(elements, handlers) {
     elements.paperSize, elements.orientation, elements.dpi, elements.dpiCustom,
     elements.background, elements.backgroundColor, elements.margin,
     elements.jpegQuality, elements.keepAspect, elements.maximize,
+    elements.nUp, elements.nUpMinDpi,
     ...document.querySelectorAll('input[name="fitMode"]'),
   ];
 
@@ -419,21 +431,30 @@ function renderPreview(elements, handlers, images, settings) {
   elements.clearAllBtn.disabled = !hasImages;
   elements.previewCount.textContent = String(images.length);
 
+  // Grouped images are analysed against their cell, not the whole page, so the
+  // card shows the size and DPI they will actually print at.
+  const plan = planBatch(images, settings);
+
   const fragment = document.createDocumentFragment();
   let estimatedTotal = 0;
 
   for (const image of images) {
-    const report = analyzeImage(image, settings);
+    const grouped = plan.grouped.get(image.id);
+    const report = grouped ? grouped.cell.report : analyzeImage(image, settings);
     const estimate = estimateFileSize(report, settings);
     estimatedTotal += estimate;
-    fragment.append(buildCard(elements, handlers, image, report, estimate));
+    fragment.append(buildCard(elements, handlers, image, report, estimate, grouped));
   }
 
   elements.previewGrid.replaceChildren(fragment);
 
   const sourceBytes = images.reduce((total, image) => total + image.bytes, 0);
+  const sheetNote = plan.sheets.length
+    ? ` · ${plan.grouped.size} low-res image${plan.grouped.size === 1 ? '' : 's'} grouped onto `
+      + `${plan.sheets.length} sheet${plan.sheets.length === 1 ? '' : 's'}`
+    : '';
   elements.previewMeta.textContent = hasImages
-    ? `${formatBytes(sourceBytes)} of source images · about ${formatBytes(estimatedTotal)} of PDF output`
+    ? `${formatBytes(sourceBytes)} of source images · about ${formatBytes(estimatedTotal)} of PDF output${sheetNote}`
     : '';
 }
 
@@ -445,9 +466,10 @@ function renderPreview(elements, handlers, images, settings) {
  * @param {import('./imageProcessor.js').DecodedImage} image
  * @param {import('./qualityAnalyzer.js').QualityReport} report
  * @param {number} estimate
+ * @param {{ sheet: import('./sheetPlanner.js').Sheet }} [grouped]
  * @returns {DocumentFragment}
  */
-function buildCard(elements, handlers, image, report, estimate) {
+function buildCard(elements, handlers, image, report, estimate, grouped) {
   const card = elements.cardTemplate.content.cloneNode(true);
   const root = card.querySelector('.card');
   const set = (selector, value) => { card.querySelector(selector).textContent = value; };
@@ -460,6 +482,13 @@ function buildCard(elements, handlers, image, report, estimate) {
 
   set('[data-name]', image.name);
   card.querySelector('[data-name]').title = image.name;
+
+  const tag = card.querySelector('[data-nup]');
+  if (grouped) {
+    const { grid, index } = grouped.sheet;
+    tag.hidden = false;
+    tag.textContent = `Sheet ${index + 1} · ${grid.cols} × ${grid.rows} per page`;
+  }
 
   set('[data-resolution]', `${image.width} × ${image.height} px`);
   set('[data-aspect]', formatAspectRatio(image.width, image.height));

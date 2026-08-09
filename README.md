@@ -37,7 +37,10 @@ PosterForge does the opposite:
 - The embedded raster is sized `inches × DPI`, so a 24 × 36 in poster at 300 DPI
   really does contain a 7200 × 10800 pixel image.
 - Resampling uses **Pica's 3-lobe Lanczos filter** in Web Workers, with gentle
-  unsharp masking — not `drawImage`.
+  unsharp masking — not `drawImage`. Browsers with canvas-fingerprinting
+  protection block the pixel read-back Pica needs; there PosterForge falls back
+  to the browser's own high-quality resizer and says so once, rather than
+  failing the batch.
 - The quality analyser reports **effective DPI derived from your original pixel
   count**, because upscaling cannot invent detail and you deserve to know that
   before you pay a print shop.
@@ -87,6 +90,26 @@ its **effective DPI**:
 Each card also carries a plain-English recommendation, e.g.
 *"Only 84 DPI — a 3.6× upscale. Detail will be obviously blurry; find a larger
 source, or print at 5.3 × 3.5 in or smaller."*
+
+### Grouping low-resolution images
+Blowing a 640 × 480 snapshot up to a full sheet does not make a poster, it makes
+a blurry 73 DPI wall covering. With **Low-Resolution Images → Group several per
+page** (the default), any image whose effective DPI would fall below the chosen
+threshold (150 by default) is pulled out of the one-image-per-page flow and tiled
+onto shared sheets instead — printed at a size its pixels actually support, ready
+to cut apart.
+
+- The grid is the *coarsest* one that gets every grouped image back above the
+  threshold: 2 × 1, 2 × 2, 3 × 2, … up to 4 × 4. Biggest print that is still
+  sharp, not the most images crammed per page.
+- Where two grids print the same size, the one fitting more per page wins, so no
+  paper is wasted on letterboxing.
+- The sheet is laid out with even gutters and a partly-filled last page is
+  centred. Each cell is embedded as its own image at its own exact physical
+  rectangle — the page is still real PDF geometry, not a screenshot.
+- Preview cards show a **Sheet 1 · 2 × 2 per page** badge, and their printed size,
+  effective DPI and star rating switch to the values for the cell they will land
+  in. Set the control to **Off** for strict one-image-per-page behaviour.
 
 ### Everything else
 - Dark and light themes, following your OS preference and remembered afterwards
@@ -163,6 +186,7 @@ PosterForge/
 │   ├── imageProcessor.js   # Decoding, thumbnails, Lanczos resampling
 │   ├── pdfGenerator.js     # pdf-lib document assembly
 │   ├── qualityAnalyzer.js  # Effective-DPI maths and ratings
+│   ├── sheetPlanner.js     # Groups low-res images onto shared sheets
 │   ├── paperSizes.js       # Paper catalogue and page geometry
 │   └── zipExporter.js      # Downloads and ZIP archives
 └── libs/                   # Vendored third-party libraries

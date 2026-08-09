@@ -190,6 +190,31 @@
         </div>
 
         <div class="field">
+          <label class="field__label" for="nUp">Low-Resolution Images</label>
+          <div class="select-wrap">
+            <select id="nUp" class="control">
+              <option value="auto" selected>Group several per page</option>
+              <option value="off">Off — one image per page</option>
+            </select>
+          </div>
+          <div id="nUpThresholdRow" class="range-row">
+            <label class="field__inline-label" for="nUpMinDpi">below</label>
+            <div class="select-wrap">
+              <select id="nUpMinDpi" class="control">
+                <option value="100">100 DPI</option>
+                <option value="150" selected>150 DPI</option>
+                <option value="200">200 DPI</option>
+                <option value="300">300 DPI</option>
+              </select>
+            </div>
+          </div>
+          <p class="field__hint">
+            Images too small to fill the page sharply are tiled onto shared sheets at a
+            size their pixels support. Cut them apart after printing.
+          </p>
+        </div>
+
+        <div class="field">
           <label class="field__label" for="jpegQuality">JPEG Quality</label>
           <div class="range-row">
             <input id="jpegQuality" class="control control--range" type="range"
@@ -291,6 +316,7 @@
       </div>
       <div class="card__body">
         <p class="card__name" data-name></p>
+        <p class="card__tag" data-nup hidden></p>
         <dl class="card__stats">
           <div><dt>Resolution</dt><dd data-resolution></dd></div>
           <div><dt>Aspect</dt><dd data-aspect></dd></div>

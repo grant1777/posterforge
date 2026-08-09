@@ -13,7 +13,7 @@
  */
 
 import { POINTS_PER_INCH } from './paperSizes.js';
-import { analyzeImage } from './qualityAnalyzer.js';
+import { analyzeImage, QUALITY_TIERS } from './qualityAnalyzer.js';
 import {
   decodeToBitmap, resampleImage, encodeCanvas, clampRenderSize,
 } from './imageProcessor.js';
@@ -207,34 +207,225 @@ export async function generatePoster(image, settings, onStage = () => {}) {
 }
 
 /**
+ * Render one image to embeddable bytes at an exact physical size.
+ *
+ * Shared by the contact-sheet path, where a page holds several independent
+ * rasters rather than one full-page bitmap.
+ *
+ * @param {import('./imageProcessor.js').DecodedImage} image
+ * @param {Object} spec
+ * @param {number} spec.widthInches
+ * @param {number} spec.heightInches
+ * @param {import('./app.js').Settings} spec.settings
+ * @returns {Promise<{ bytes: Uint8Array, format: 'png'|'jpeg', clamped: boolean }>}
+ */
+async function renderImageBytes(image, { widthInches, heightInches, settings }) {
+  const requested = clampRenderSize(
+    Math.round(widthInches * settings.dpi),
+    Math.round(heightInches * settings.dpi),
+  );
+
+  const bitmap = await decodeToBitmap(image.file);
+  let canvas;
+  try {
+    canvas = await resampleImage(bitmap, {
+      targetWidth: requested.width,
+      targetHeight: requested.height,
+      background: resolveBackground(settings),
+    });
+  } finally {
+    bitmap.close?.();
+  }
+
+  const { bytes, format } = await encodeCanvas(canvas, {
+    transparent: settings.background === 'transparent',
+    jpegQuality: settings.jpegQuality,
+  });
+
+  canvas.width = 0;
+  canvas.height = 0;
+
+  return { bytes, format, clamped: requested.clamped };
+}
+
+/**
+ * Build one shared sheet: several images tiled on a single page, each embedded
+ * as its own image XObject at its own exact physical rectangle.
+ *
+ * Compositing the cells into one page-sized canvas would work too, but this way
+ * each image is resampled only to the size it is actually printed at — far less
+ * memory, and no resampling of the empty paper between cells.
+ *
+ * @param {import('./sheetPlanner.js').Sheet} sheet
+ * @param {import('./app.js').Settings} settings
+ * @param {(stage: string) => void} [onStage]
+ * @returns {Promise<PosterResult>}
+ */
+export async function generateSheet(sheet, settings, onStage = () => {}) {
+  const { PDFDocument, rgb } = window.PDFLib;
+  const warnings = [];
+  const { page, grid, cells } = sheet;
+
+  const pageWidthPt = page.width * POINTS_PER_INCH;
+  const pageHeightPt = page.height * POINTS_PER_INCH;
+
+  const pdfDoc = await PDFDocument.create();
+  pdfDoc.setTitle(`${cells.length} images — ${grid.cols} × ${grid.rows} sheet`);
+  pdfDoc.setCreator(`${PRODUCER} — local, browser-based poster generator`);
+  pdfDoc.setSubject(
+    `${page.width.toFixed(2)} × ${page.height.toFixed(2)} in sheet of `
+    + `${cells.length} images at ${settings.dpi} DPI`,
+  );
+  pdfDoc.setKeywords([PRODUCER, `${settings.dpi}dpi`, settings.paper.id, `${grid.cols}x${grid.rows}`]);
+  pdfDoc.setCreationDate(new Date());
+  pdfDoc.setModificationDate(new Date());
+
+  const pdfPage = pdfDoc.addPage([pageWidthPt, pageHeightPt]);
+
+  const background = resolveBackground(settings);
+  if (background) {
+    const { r, g, b } = hexToRgb(background);
+    pdfPage.drawRectangle({
+      x: 0, y: 0, width: pageWidthPt, height: pageHeightPt, color: rgb(r, g, b),
+    });
+  }
+
+  let clampedAny = false;
+
+  for (const [position, cell] of cells.entries()) {
+    onStage(`Placing ${position + 1}/${cells.length}`);
+
+    const { bytes, format, clamped } = await renderImageBytes(cell.image, {
+      widthInches: cell.width,
+      heightInches: cell.height,
+      settings,
+    });
+    clampedAny ||= clamped;
+
+    const embedded = format === 'png'
+      ? await pdfDoc.embedPng(bytes)
+      : await pdfDoc.embedJpg(bytes);
+
+    pdfPage.drawImage(embedded, {
+      x: cell.x * POINTS_PER_INCH,
+      // Top-left geometry → PDF's bottom-left origin.
+      y: (page.height - cell.y - cell.height) * POINTS_PER_INCH,
+      width: cell.width * POINTS_PER_INCH,
+      height: cell.height * POINTS_PER_INCH,
+    });
+  }
+
+  onStage('Generating PDF');
+  const pdfBytes = await pdfDoc.save({ useObjectStreams: true, updateMetadata: false });
+  const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+
+  const report = buildSheetReport(sheet, settings);
+
+  warnings.push(
+    `Grouped ${cells.length} low-resolution image${cells.length === 1 ? '' : 's'} `
+    + `${grid.cols} × ${grid.rows} on one page so each prints sharp — cut them apart after printing.`,
+  );
+  if (!sheet.meetsTarget) {
+    warnings.push(
+      `Even at this size some of these images stay below ${settings.nUpMinDpi} DPI.`,
+    );
+  }
+  if (clampedAny) {
+    warnings.push('One or more cells hit this browser\'s canvas limit and were rendered at a lower DPI.');
+  }
+
+  return {
+    id: sheet.id,
+    name: `${cells.length} images`,
+    filename: buildSheetFilename(sheet, settings),
+    blob,
+    bytes: blob.size,
+    report,
+    warnings,
+  };
+}
+
+/**
+ * Summarise a sheet in the same shape a single poster reports, so the results
+ * list and the ZIP exporter need no special cases.
+ *
+ * The rating is the *worst* cell on the page — a sheet is only as good as its
+ * weakest image.
+ *
+ * @param {import('./sheetPlanner.js').Sheet} sheet
+ * @param {import('./app.js').Settings} settings
+ * @returns {import('./qualityAnalyzer.js').QualityReport}
+ */
+function buildSheetReport(sheet, settings) {
+  const worst = sheet.cells.reduce(
+    (lowest, cell) => (cell.report.effectiveDpi < lowest.effectiveDpi ? cell.report : lowest),
+    sheet.cells[0].report,
+  );
+  const tier = QUALITY_TIERS.find((candidate) => worst.effectiveDpi >= candidate.min);
+
+  return {
+    ...worst,
+    page: sheet.page,
+    targetWidth: Math.round(sheet.page.width * settings.dpi),
+    targetHeight: Math.round(sheet.page.height * settings.dpi),
+    stars: tier.stars,
+    ratingId: tier.id,
+    ratingLabel: tier.label,
+    tone: tier.tone,
+  };
+}
+
+/**
+ * @param {import('./sheetPlanner.js').Sheet} sheet
+ * @param {import('./app.js').Settings} settings
+ * @returns {string}
+ */
+function buildSheetFilename(sheet, settings) {
+  const { cols, rows } = sheet.grid;
+  return `sheet-${String(sheet.index + 1).padStart(2, '0')}_`
+    + `${settings.paper.id}-${sheet.page.orientation}-${cols}x${rows}-${settings.dpi}dpi.pdf`;
+}
+
+/**
  * Generate posters for a batch, yielding each result as it completes.
  *
  * Implemented as an async generator so the caller drives the loop: the UI can
  * paint progress, and cancellation takes effect between images rather than
  * requiring the whole batch to finish.
  *
- * @param {import('./imageProcessor.js').DecodedImage[]} images
+ * Each job is either a single full-page poster or one shared sheet of grouped
+ * low-resolution images; see sheetPlanner.js.
+ *
+ * @param {import('./sheetPlanner.js').Job[]} jobs
  * @param {import('./app.js').Settings} settings
  * @param {Object} [options]
  * @param {AbortSignal} [options.signal]
  * @param {(progress: { index: number, total: number, stage: string, name: string }) => void} [options.onProgress]
  * @yields {{ ok: true, result: PosterResult } | { ok: false, id: string, name: string, error: Error }}
  */
-export async function* generatePosters(images, settings, { signal, onProgress = () => {} } = {}) {
-  for (const [index, image] of images.entries()) {
+export async function* generatePosters(jobs, settings, { signal, onProgress = () => {} } = {}) {
+  for (const [index, job] of jobs.entries()) {
     if (signal?.aborted) return;
 
-    const report = (stage) => onProgress({ index, total: images.length, stage, name: image.name });
+    const isSheet = job.type === 'sheet';
+    const id = isSheet ? job.sheet.id : job.image.id;
+    const name = isSheet
+      ? `sheet of ${job.sheet.cells.length} images`
+      : job.image.name;
+
+    const report = (stage) => onProgress({ index, total: jobs.length, stage, name });
     report('Preparing');
 
     try {
-      const result = await generatePoster(image, settings, report);
+      const result = isSheet
+        ? await generateSheet(job.sheet, settings, report)
+        : await generatePoster(job.image, settings, report);
       yield { ok: true, result };
     } catch (error) {
       yield {
         ok: false,
-        id: image.id,
-        name: image.name,
+        id,
+        name,
         error: error instanceof Error ? error : new Error(String(error)),
       };
     }

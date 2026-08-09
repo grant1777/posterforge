@@ -4,14 +4,27 @@
  * Everything pixel-related: decoding user files, building preview thumbnails,
  * and producing the high-quality resampled bitmap that ends up inside the PDF.
  *
- * Resampling is done exclusively with Pica (Lanczos, in Web Workers). The
- * browser's native `drawImage` scaling is bilinear-ish, unspecified, and visibly
- * mushy at poster sizes, so it is only ever used for 1:1 blits and for the tiny
- * preview thumbnails where quality is irrelevant.
+ * Resampling prefers Pica (Lanczos, in Web Workers). The browser's native
+ * `drawImage` scaling is bilinear-ish, unspecified, and visibly mushy at poster
+ * sizes, so it is only used for 1:1 blits, the tiny preview thumbnails where
+ * quality is irrelevant, and the fallback path below.
+ *
+ * That fallback exists because Pica needs `getImageData`, and browsers with
+ * canvas-fingerprinting protection (Brave Shields, Firefox's
+ * `privacy.resistFingerprinting`, several privacy extensions) perturb the pixels
+ * it reads back. Pica detects the mismatch and refuses to run at all. Rather
+ * than failing every poster in the batch, we resample with `createImageBitmap`'s
+ * high-quality resizer — slightly softer than Lanczos, but perfectly printable.
  */
 
 /** Lazily-created singleton Pica instance (it owns a worker pool). */
 let picaInstance = null;
+
+/** Cached result of the canvas read-back probe; null until first asked. */
+let canvasReadbackOk = null;
+
+/** Set the first time a poster falls back off Pica, for one-time UI reporting. */
+let fallbackReason = null;
 
 /**
  * @returns {any} The shared Pica instance.
@@ -209,8 +222,23 @@ export async function resampleImage(bitmap, spec) {
   if (targetWidth === source.width && targetHeight === source.height) {
     // Already the right size: a straight blit is both faster and lossless.
     resized.getContext('2d').drawImage(source, 0, 0);
+  } else if (!canReadCanvasPixels()) {
+    noteFallback(
+      'This browser blocks reading pixels back from a canvas (canvas '
+      + 'fingerprinting protection), so Lanczos resampling was unavailable. '
+      + 'Posters used the browser\'s own high-quality resizer instead.',
+    );
+    await resizeWithoutReadback(source, resized);
   } else {
-    await getPica().resize(source, resized, RESIZE_OPTIONS);
+    try {
+      await getPica().resize(source, resized, RESIZE_OPTIONS);
+    } catch (error) {
+      noteFallback(
+        `Lanczos resampling failed (${error.message}) — posters used the `
+        + 'browser\'s own high-quality resizer instead.',
+      );
+      await resizeWithoutReadback(source, resized);
+    }
   }
 
   const cropWidth = Math.min(spec.cropWidth ?? targetWidth, targetWidth);
@@ -278,6 +306,133 @@ export function clampRenderSize(width, height) {
     scale,
     clamped: true,
   };
+}
+
+/**
+ * Probe whether pixels written to a canvas come back unchanged.
+ *
+ * This is the same 2×1 round-trip Pica performs internally; running it up front
+ * lets us choose a working path instead of catching Pica's error per image.
+ * Anti-fingerprinting features add sub-perceptual noise to `getImageData`, which
+ * makes the comparison fail.
+ *
+ * @returns {boolean}
+ */
+function canReadCanvasPixels() {
+  if (canvasReadbackOk !== null) return canvasReadbackOk;
+
+  canvasReadbackOk = false;
+  try {
+    const context = createCanvas(2, 1).getContext('2d');
+    const written = context.createImageData(2, 1);
+    const sample = [12, 23, 34, 255, 45, 56, 67, 255];
+    sample.forEach((value, index) => { written.data[index] = value; });
+    context.putImageData(written, 0, 0);
+
+    const read = context.getImageData(0, 0, 2, 1);
+    canvasReadbackOk = sample.every((value, index) => read.data[index] === value);
+  } catch {
+    /* Tainted canvas, or a browser that refuses getImageData outright. */
+  }
+  return canvasReadbackOk;
+}
+
+/**
+ * Record why Pica was bypassed, so the UI can mention it once per session
+ * instead of once per poster.
+ *
+ * @param {string} reason
+ * @returns {void}
+ */
+function noteFallback(reason) {
+  fallbackReason ??= reason;
+}
+
+/**
+ * @returns {string|null} Why resampling fell back off Pica, or null if it did not.
+ */
+export function getResampleFallbackReason() {
+  return fallbackReason;
+}
+
+/**
+ * Resample without ever reading pixels back.
+ *
+ * `createImageBitmap`'s `resizeQuality: 'high'` is implemented by the browser's
+ * compositor (a decent multi-tap filter) and needs no pixel access. Where it is
+ * missing, successive halving through `drawImage` keeps far more detail than one
+ * big bilinear jump.
+ *
+ * @param {HTMLCanvasElement} source
+ * @param {HTMLCanvasElement} target  Pre-sized destination; overwritten entirely.
+ * @returns {Promise<void>}
+ */
+async function resizeWithoutReadback(source, target) {
+  const context = target.getContext('2d');
+  context.clearRect(0, 0, target.width, target.height);
+
+  if (typeof createImageBitmap === 'function') {
+    try {
+      const bitmap = await createImageBitmap(source, {
+        resizeWidth: target.width,
+        resizeHeight: target.height,
+        resizeQuality: 'high',
+      });
+      context.drawImage(bitmap, 0, 0);
+      bitmap.close?.();
+      return;
+    } catch {
+      /* Older Safari ignores or rejects the resize options; step down instead. */
+    }
+  }
+
+  drawStepped(source, target);
+}
+
+/**
+ * Downscale by repeated halving, then a final draw into the target.
+ *
+ * @param {HTMLCanvasElement} source
+ * @param {HTMLCanvasElement} target
+ * @returns {void}
+ */
+function drawStepped(source, target) {
+  let current = source;
+  let width = source.width;
+  let height = source.height;
+
+  while (width > target.width * 2 || height > target.height * 2) {
+    width = Math.max(target.width, Math.round(width / 2));
+    height = Math.max(target.height, Math.round(height / 2));
+
+    const step = createCanvas(width, height);
+    const stepContext = step.getContext('2d');
+    stepContext.imageSmoothingEnabled = true;
+    stepContext.imageSmoothingQuality = 'high';
+    stepContext.drawImage(current, 0, 0, width, height);
+
+    releaseIntermediate(current, source);
+    current = step;
+  }
+
+  const context = target.getContext('2d');
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = 'high';
+  context.drawImage(current, 0, 0, target.width, target.height);
+  releaseIntermediate(current, source);
+}
+
+/**
+ * Free a scratch canvas, unless it is the caller's own source.
+ *
+ * @param {HTMLCanvasElement} canvas
+ * @param {HTMLCanvasElement} source
+ * @returns {void}
+ */
+function releaseIntermediate(canvas, source) {
+  if (canvas === source) return;
+  canvas.width = 0;
+  canvas.height = 0;
 }
 
 /**
